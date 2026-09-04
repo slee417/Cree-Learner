@@ -11,7 +11,7 @@ type Word = {
   AudioUrl?: string;
 };
 
-const API_URL = "http://localhost:4000/api/activities/search"; 
+const API_URL = "http://172.20.10.5:4000/api/activities/search"; 
 // iOS 시뮬레이터 = localhost, Android 에뮬레이터 = 10.0.2.2 로 바꾸세요.
 // iphone Jisoo: 192.75.244.32
 

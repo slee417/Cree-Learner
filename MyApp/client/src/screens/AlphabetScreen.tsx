@@ -1,19 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
-import TrackPlayer, { Capability } from 'react-native-track-player';
 import styles from '../styles/AlphabetScreen.styles';
-
-export async function setupPlayer() {
-  try {
-    await TrackPlayer.setupPlayer();
-    await TrackPlayer.updateOptions({
-      capabilities: [Capability.Play, Capability.Pause],
-    });
-    console.log('✅ TrackPlayer setup complete');
-  } catch (err) {
-    console.error('TrackPlayer setup error:', err);
-  }
-}
+import TrackPlayer from 'react-native-track-player';
 
 export async function playSound(file: any) {
   try {
@@ -86,23 +74,7 @@ export default function AlphabetScreen() {
     'ᐓ': '[wu]',
     'ᐕ': '[wuu]',
   };
-  // ✅ Player setup + cleanup
-  useEffect(() => {
-    (async () => {
-      await setupPlayer();
-    })();
 
-    return () => {
-      (async () => {
-        try {
-          await TrackPlayer.destroy();
-          console.log('🧹 TrackPlayer destroyed');
-        } catch (err) {
-          console.warn('TrackPlayer already destroyed or not initialized');
-        }
-      })();
-    };
-  }, []);
 
   const onPick = async (sym: string) => {
     setSelected(sym);
