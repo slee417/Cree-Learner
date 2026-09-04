@@ -1,8 +1,8 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import { Alert, View, Text, TouchableOpacity, Image, StyleSheet, ActivityIndicator } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
-import TrackPlayer, { Capability } from "react-native-track-player";
+import TrackPlayer from "react-native-track-player";
 import AudioRecorderPlayer from "react-native-audio-recorder-player";
+import { useFocusEffect } from "@react-navigation/native";
 
 type Word = {
   Cree: string;
@@ -11,7 +11,16 @@ type Word = {
   AudioUrl?: string;
 };
 
-const API_URL = "http://172.20.10.5:4000/api/activities/search"; 
+type AssessmentResult = {
+  text: string;
+  scores: {
+    accuracy: number;
+    fluency: number;
+    completeness: number;
+  };
+};
+
+const API_URL = "http://127.0.0.1:4000/api/activities/search"; 
 // iOS 시뮬레이터 = localhost, Android 에뮬레이터 = 10.0.2.2 로 바꾸세요.
 // iphone Jisoo: 192.75.244.32
 
@@ -38,7 +47,9 @@ const WordsScreen = () => {
   const [word, setWord] = useState<Word | null>(null);
   const [loading, setLoading] = useState(false);
   const [isRecording, setRecording] = useState(false);
-  const [filePath, setFilePath] = useState<string | null>(null);
+  const [assessment, setAssessment] =
+    useState<AssessmentResult | null>(null);
+  const [isAssessing, setIsAssessing] = useState(false);
 
     const audioRecorderPlayer = useRef(new AudioRecorderPlayer()).current;
 
@@ -53,9 +64,9 @@ const WordsScreen = () => {
   const startRecording = async () => {
     try {
       const result = await audioRecorderPlayer.startRecorder();
+      setAssessment(null);
       setRecording(true);
       console.log('Recording started:', result);
-      setFilePath(null); // clear previous file
     } catch (err) {
       console.error('Start recording error:', err);
       Alert.alert('Error', 'Failed to start recording');
@@ -63,63 +74,100 @@ const WordsScreen = () => {
   };
   
   const stopRecording = async () => {
+    let result: string;
     try {
-      const result = await audioRecorderPlayer.stopRecorder();
+      result = await audioRecorderPlayer.stopRecorder();
       setRecording(false);
       console.log('Recording stopped:', result);
-      setFilePath(result); // store file path
-      await uploadRecording(word?.Cree || ""); 
     } catch (err) {
       console.error('Stop recording error:', err);
       Alert.alert('Error', 'Failed to stop recording');
+      return;
+    }
+    try {
+      await uploadRecording(result, word?.Cree || ""); 
+      // await uploadRecording(result,"hello world"); 
+    } catch (err) {
+      console.error('record uploading error:', err);
     }
   };
+  const uploadRecording = async (recordingUri: string, refText: string) => {
 
-  const uploadRecording = async (refText: string) => {
-    if (!filePath) return Alert.alert("No recording", "Please record first");
-  
-    const formData = new FormData();
-    formData.append("audio", {
-      uri: filePath,
-      name: "recording.m4a",
-      type: "audio/m4a",
-    });
-    formData.append("text", refText);
-  
-    const res = await fetch("http://YOUR_SERVER/api/pronounce/assess", {
-      method: "POST",
-      body: formData,
-      headers: { "Content-Type": "multipart/form-data" },
-    });
-  
-    const data = await res.json();
-    console.log("Pronunciation Assessment:", data);
-  };
+    if (!refText.trim()) return Alert.alert("No word", "Please select a word first");
+    if (!recordingUri) return Alert.alert("No recording", "Please record first");
 
-  useEffect(() => {
-    (async () => {
-      try {
-        await TrackPlayer.setupPlayer();
-        await TrackPlayer.updateOptions({
-          capabilities: [Capability.Play, Capability.Pause],
-        });
-        console.log("🎧 TrackPlayer ready");
-      } catch (e) {
-        console.error("TrackPlayer setup failed:", e);
+    setIsAssessing(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("audio", {
+        uri: recordingUri,
+        name: "recording.m4a",
+        type: "audio/m4a",
+      });
+      formData.append("text", refText);
+
+      const res = await fetch("http://127.0.0.1:4000/api/pronounce/assess", {
+        method: "POST",
+        body: formData,
+        // headers: { "Content-Type": "multipart/form-data" },
+      });
+      if (!res.ok) {
+        throw new Error("response not ok: Pronunciation assessment failed");
       }
-    })();
+      const data: AssessmentResult = await res.json();
+      setAssessment(data);
+      console.log("Pronunciation Assessment:", data);
+    } finally {
+      setIsAssessing(false);
+    }
+  };
+  // const uploadRecording = async (refText: string) => {
+  //   if (!filePath) return Alert.alert("No recording", "Please record first");
+  
+  //   const formData = new FormData();
+  //   formData.append("audio", {
+  //     uri: filePath,
+  //     name: "recording.m4a",
+  //     type: "audio/m4a",
+  //   });
+  //   formData.append("text", refText);
+  
+  //   const res = await fetch("http://YOUR_SERVER/api/pronounce/assess", {
+  //     method: "POST",
+  //     body: formData,
+  //     headers: { "Content-Type": "multipart/form-data" },
+  //   });
+  
+  //   const data = await res.json();
+  //   console.log("Pronunciation Assessment:", data);
+  // };
 
-    return () => {
-      (async () => {
-        try {
-          await TrackPlayer.destroy();
-          console.log("🧹 TrackPlayer destroyed");
-        } catch {}
-      })();
-    };
-  }, []);
+  // useEffect(() => {
+  //   (async () => {
+  //     try {
+  //       await TrackPlayer.setupPlayer();
+  //       await TrackPlayer.updateOptions({
+  //         capabilities: [Capability.Play, Capability.Pause],
+  //       });
+  //       console.log("🎧 TrackPlayer ready");
+  //     } catch (e) {
+  //       console.error("TrackPlayer setup failed:", e);
+  //     }
+  //   })();
+
+  //   return () => {
+  //     (async () => {
+  //       try {
+  //         await TrackPlayer.destroy();
+  //         console.log("🧹 TrackPlayer destroyed");
+  //       } catch {}
+  //     })();
+  //   };
+  // }, []);
 
   const fetchWord = async () => {
+    setAssessment(null);
     setLoading(true);
     try {
       const res = await fetch(API_URL, {
@@ -182,12 +230,33 @@ const WordsScreen = () => {
       ) : !loading ? (
         <Text>no data</Text>
       ) : null}
+
+      {isAssessing && (
+        <View>
+          <ActivityIndicator size="small" color="#2E3A1C" />
+          <Text>Assessing pronunciation...</Text>
+        </View>
+      )}
+
+      {assessment && (
+        <View>
+          <Text>Recognized: {assessment.text}</Text>
+          <Text>Accuracy: {assessment.scores.accuracy}</Text>
+          <Text>Fluency: {assessment.scores.fluency}</Text>
+          <Text>Completeness: {assessment.scores.completeness}</Text>
+        </View>
+      )}
+
       {/* Floating refresh Button */}
 {/* Action Row: 왼쪽(레코딩), 오른쪽(리프레시) */}
 <View style={styles.actionRow}>
   {/* 🎤 Record / ⏸ Pause 토글 버튼 (왼쪽) */}
   <TouchableOpacity
-  style={styles.roundButton}
+  disabled={isAssessing}
+  style={[
+    styles.roundButton,
+    isAssessing && styles.disabledButton,
+  ]}
   onPress={toggleRecording}
   activeOpacity={0.9}
   accessibilityRole="button"
@@ -264,6 +333,10 @@ roundButton: {
   shadowRadius: 8,
   shadowOffset: { width: 0, height: 4 },
   elevation: 6,
+},
+
+disabledButton: {
+  opacity: 0.5,
 },
 
 roundIcon: {

@@ -7,13 +7,46 @@ import random
 app = Flask(__name__)
 CORS(app)
 
+CREE_WORDS = [
+    {
+        "Cree": "tânisi",
+        "Pronunciation": "tânisi",
+        "Meaning": "Hello; how are you?",
+        "AudioUrl": ""
+    },
+    {
+        "Cree": "nipiy",
+        "Pronunciation": "nipiy",
+        "Meaning": "Water",
+        "AudioUrl": ""
+    },
+    {
+        "Cree": "maskwa",
+        "Pronunciation": "maskwa",
+        "Meaning": "Bear",
+        "AudioUrl": ""
+    },
+    {
+        "Cree": "wâpos",
+        "Pronunciation": "wâpos",
+        "Meaning": "Rabbit; hare",
+        "AudioUrl": ""
+    },
+    {
+        "Cree": "hay hay",
+        "Pronunciation": "hay hay",
+        "Meaning": "Thank you",
+        "AudioUrl": ""
+    },
+]
+
 # 👉 이미 INSERT할 때 사용한 conn_str 그대로 사용
 CONN_STR = (
     "DRIVER={ODBC Driver 18 for SQL Server};"
     "SERVER=vancouveract.database.windows.net;"
     "DATABASE=VancouverRecreationalActivities;"
     "UID=myadmin;"
-    "PWD=SoohoJisooNayoung123!;"
+    # "PWD=SoohoJisooNayoung123!;"
     "Encrypt=yes;"
     "TrustServerCertificate=no;"
     "Connection Timeout=30;"
@@ -36,7 +69,7 @@ def assess_json():
         with tempfile.TemporaryDirectory() as td:
             src = os.path.join(td, file.filename or "in.m4a")
             file.save(src)
-            # 수호 TODO audio convert
+            # TODO audio convert
             wav_path = os.path.join(td, "converted.wav")
             cmd = [
                 "ffmpeg", "-y", "-i", src,
@@ -46,52 +79,52 @@ def assess_json():
                 wav_path
             ]
             subprocess.run(cmd, check=True)
+            key = os.environ.get("AZURE_SPEECH_KEY")
+            region = os.environ.get("AZURE_SPEECH_REGION")
+            lang = os.environ.get("AZURE_SPEECH_LANG", "en-US")
+            if not key or not region:
+                return jsonify({"error": "server not configured (AZURE_SPEECH_KEY/REGION)"}), 500
 
-        key = os.environ.get("AZURE_SPEECH_KEY")
-        region = os.environ.get("AZURE_SPEECH_REGION")
-        lang = os.environ.get("AZURE_SPEECH_LANG", "en-US")
-        if not key or not region:
-            return jsonify({"error": "server not configured (AZURE_SPEECH_KEY/REGION)"}), 500
+            speech_config = speechsdk.SpeechConfig(subscription=key, region=region)
+            speech_config.speech_recognition_language = lang
+            audio_config = speechsdk.audio.AudioConfig(filename=wav_path)
+            recognizer = speechsdk.SpeechRecognizer(speech_config, audio_config)  # 수호 todo
+            # body = request.get_json(force=True) or {}
+            # # ✅ 필수값 검사 (예: text)
+            # required = ["text"]
+            # missing = [k for k in required if k not in body]
+            # if missing:
+            #     return jsonify({"error": f"missing fields: {missing}"}), 400
 
-        speech_config = speechsdk.SpeechConfig(subscription=key, region=region)
-        speech_config.speech_recognition_language = lang
-        audio_config = speechsdk.audio.AudioConfig(filename=wav_path)
-        recognizer = speechsdk.SpeechRecognizer(speech_config, audio_config)  # 수호 todo
+            pa_cfg = speechsdk.PronunciationAssessmentConfig(
+                reference_text=ref_text,
+                grading_system=speechsdk.PronunciationAssessmentGradingSystem.HundredMark,
+                granularity=speechsdk.PronunciationAssessmentGranularity.Phoneme,
+                enable_miscue=True,
+            )
 
-        body = request.get_json(force=True) or {}
-        # ✅ 필수값 검사 (예: text)
-        required = ["text"]
-        missing = [k for k in required if k not in body]
-        if missing:
-            return jsonify({"error": f"missing fields: {missing}"}), 400
+            pa_cfg.apply_to(recognizer)
 
-        pa_cfg = speechsdk.PronunciationAssessmentConfig(
-            reference_text=ref_text,
-            grading_system=speechsdk.PronunciationAssessmentGradingSystem.HundredMark,
-            granularity=speechsdk.PronunciationAssessmentGranularity.Phoneme,
-            enable_miscue=True,
-        )
+            result = recognizer.recognize_once()
+            if result.reason != speechsdk.ResultReason.RecognizedSpeech:
+                return jsonify({"error": "no_speech_or_failed", "reason": str(result.reason)}), 400
 
-        pa_cfg.apply_to(recognizer)
+            pa = speechsdk.PronunciationAssessmentResult(result)
 
-        result = recognizer.recognize_once()
-        if result.reason != speechsdk.ResultReason.RecognizedSpeech:
-            return jsonify({"error": "no_speech_or_failed", "reason": str(result.reason)}), 400
-
-        pa = speechsdk.PronunciationAssessmentResult(result)
-
-        return jsonify({
-            "text": result.text,
-            "scores": {
-                "accuracy": pa.accuracy_score,
-                "fluency": pa.fluency_score,
-                "completeness": pa.completeness_score,
-            }
-        }), 200
+            return jsonify({
+                "text": result.text,
+                "scores": {
+                    "accuracy": pa.accuracy_score,
+                    "fluency": pa.fluency_score,
+                    "completeness": pa.completeness_score,
+                }
+            }), 200
 
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+
         
 
 @app.route("/api/activities/search", methods=["POST"])
@@ -100,25 +133,27 @@ def search_activities():
     print("🧪 Received request body:", body)
 
     # TODO: body 값에 따라 SQL 조건을 동적으로 붙일 수 있음
-    sql = "SELECT * FROM words"
-    print("🧾 SQL Query:", sql)
+    # sql = "SELECT * FROM words"
+    # print("🧾 SQL Query:", sql)
 
-    try:
-        with get_conn() as conn:
-            cur = conn.cursor()
-            cur.execute(sql)  # ← params가 없으니 단순 실행
-            cols = [c[0] for c in cur.description]
-            rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    # try:
+    #     with get_conn() as conn:
+    #         cur = conn.cursor()
+    #         cur.execute(sql)  # ← params가 없으니 단순 실행
+    #         cols = [c[0] for c in cur.description]
+    #         rows = [dict(zip(cols, r)) for r in cur.fetchall()]
 
-            num = random.randint(0, 4)
-            print(rows[num])
-            print("✅ Query returned", len(rows), "rows")
-            return rows[num]
+    #         num = random.randint(0, 4)
+    #         print(rows[num])
+    #         print("✅ Query returned", len(rows), "rows")
+    #         return rows[num]
 
-    except Exception as e:
-        print("❌ Exception:", str(e))
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+    return jsonify(random.choice(CREE_WORDS))
+
+    # except Exception as e:
+    #     print("❌ Exception:", str(e))
+    #     traceback.print_exc()
+        # return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":
