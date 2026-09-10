@@ -35,8 +35,7 @@ const DonationScreen = () => {
     }
   };
 
-  // Reusable opener for reference links
-  const open = (url: string) => Linking.openURL(url);
+
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
