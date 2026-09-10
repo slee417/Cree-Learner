@@ -36,3 +36,50 @@ def test_random_word_has_required_fields():
     assert "Pronunciation" in data
     assert "Meaning" in data
     assert "AudioUrl" in data
+    assert "Id" in data
+    assert "Category" in data
+    assert "Difficulty" in data
+    assert "SourceUrl" in data
+
+
+def test_random_word_excludes_current_word():
+    client = app.test_client()
+
+    for _ in range(20):
+        response = client.post(
+            "/api/activities/search",
+            json={"excludeId": "tanisi"},
+        )
+        assert response.status_code == 200
+        assert response.get_json()["Id"] != "tanisi"
+
+
+def test_random_word_filters_by_category_and_difficulty():
+    client = app.test_client()
+
+    response = client.post(
+        "/api/activities/search",
+        json={
+            "category": "animals",
+            "difficulty": "beginner",
+        },
+    )
+
+    data = response.get_json()
+    assert response.status_code == 200
+    assert data["Category"] == "animals"
+    assert data["Difficulty"] == "beginner"
+
+
+def test_random_word_returns_404_for_empty_filter_result():
+    client = app.test_client()
+
+    response = client.post(
+        "/api/activities/search",
+        json={"category": "not-a-real-category"},
+    )
+
+    assert response.status_code == 404
+    assert response.get_json() == {
+        "error": "No words match the requested filters."
+    }

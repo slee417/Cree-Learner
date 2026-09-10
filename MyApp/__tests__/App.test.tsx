@@ -40,6 +40,16 @@ jest.mock('react-native-track-player', () => ({
   useProgress: jest.fn(() => ({ position: 0, duration: 0, buffered: 0 })),
 }));
 
+jest.mock('@mindinventory/react-native-nitro-realtime-audio', () => ({
+  configureAudioSession: jest.fn(),
+  deactivateAudioSession: jest.fn(),
+  getMicrophonePermissionStatus: jest.fn(() => 'granted'),
+  onAudioChunk: jest.fn(),
+  requestMicrophonePermission: jest.fn(() => Promise.resolve('granted')),
+  startRecording: jest.fn(),
+  stopRecording: jest.fn(),
+}));
+
 
 
 test('renders correctly', async () => {
