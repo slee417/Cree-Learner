@@ -1,6 +1,9 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+import os
+
 import pyodbc
+from dotenv import load_dotenv
 import traceback
 import random
 
@@ -40,13 +43,19 @@ CREE_WORDS = [
     },
 ]
 
-# 👉 이미 INSERT할 때 사용한 conn_str 그대로 사용
+# Database settings come from server/.env (never committed; see .env.example).
+# Without DB_USER/DB_PASSWORD the server falls back to CREE_WORDS above,
+# which keeps CI and offline demos working.
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+
+DB_CONFIGURED = bool(os.environ.get("DB_USER") and os.environ.get("DB_PASSWORD"))
+
 CONN_STR = (
     "DRIVER={ODBC Driver 18 for SQL Server};"
-    "SERVER=vancouveract.database.windows.net;"
-    "DATABASE=VancouverRecreationalActivities;"
-    "UID=myadmin;"
-    # "PWD=SoohoJisooNayoung123!;"
+    f"SERVER={os.environ.get('DB_SERVER', 'vancouveract.database.windows.net')};"
+    f"DATABASE={os.environ.get('DB_NAME', 'VancouverRecreationalActivities')};"
+    f"UID={os.environ.get('DB_USER', '')};"
+    f"PWD={os.environ.get('DB_PASSWORD', '')};"
     "Encrypt=yes;"
     "TrustServerCertificate=no;"
     "Connection Timeout=30;"
@@ -129,31 +138,24 @@ def assess_json():
 
 @app.route("/api/activities/search", methods=["POST"])
 def search_activities():
-    body = request.get_json(force=True) or {}
-    print("🧪 Received request body:", body)
+    """Return one random practice word: from the Azure `words` table when
+    the database is configured, otherwise from the built-in CREE_WORDS."""
+    if not DB_CONFIGURED:
+        return jsonify(random.choice(CREE_WORDS))
 
-    # TODO: body 값에 따라 SQL 조건을 동적으로 붙일 수 있음
-    # sql = "SELECT * FROM words"
-    # print("🧾 SQL Query:", sql)
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM words")
+            cols = [c[0] for c in cur.description]
+            rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": f"database error: {e}"}), 500
 
-    # try:
-    #     with get_conn() as conn:
-    #         cur = conn.cursor()
-    #         cur.execute(sql)  # ← params가 없으니 단순 실행
-    #         cols = [c[0] for c in cur.description]
-    #         rows = [dict(zip(cols, r)) for r in cur.fetchall()]
-
-    #         num = random.randint(0, 4)
-    #         print(rows[num])
-    #         print("✅ Query returned", len(rows), "rows")
-    #         return rows[num]
-
-    return jsonify(random.choice(CREE_WORDS))
-
-    # except Exception as e:
-    #     print("❌ Exception:", str(e))
-    #     traceback.print_exc()
-        # return jsonify({"error": str(e)}), 500
+    if not rows:
+        return jsonify({"error": "the words table is empty"}), 404
+    return jsonify(random.choice(rows))
 
 
 if __name__ == "__main__":
